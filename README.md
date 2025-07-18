@@ -2,6 +2,8 @@ Python 虚拟环境管理器
 ==================
 
 ![主程序页面](/img/venv_manager.png)
+![包管理页面](/img/package_manager.png)
+![设置页面](/img/setting.png)
 
 简介
 --
