@@ -32,7 +32,7 @@ Python 虚拟环境管理器
 ------
 - Python 3.6 或更高版本
 - PyQt5
-- Windows/Linux/MacOS
+- Windows
 
 安装步骤
 ------
