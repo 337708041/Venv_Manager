@@ -114,9 +114,8 @@ class VenvManager:
         if not full_path.exists():
             raise Exception(f"虚拟环境 {venv_path} 不存在")
         
-        # 创建并启动工作线程，在父目录中激活
-        parent_path = full_path.parent
-        worker = ActivateWorker(venv_path, parent_path, self.logger)
+        # 创建并启动工作线程
+        worker = ActivateWorker(venv_path, full_path, self.logger)
         worker.start()
         return worker
 
@@ -208,7 +207,7 @@ class ActivateWorker(threading.Thread):
             self.logger.info(f"正在激活虚拟环境: {self.venv_path}")
             if os.name == 'nt':
                 activate_script = self.full_path / 'Scripts' / 'activate.bat'
-                cmd = f'cd /d "{str(self.full_path)}" && call "{str(activate_script)}"'
+                cmd = f'cd /d "{str(self.full_path.parent)}" && call "{str(activate_script)}"'
                 subprocess.Popen(f'start cmd.exe /K "{cmd}"', shell=True)
             else:
                 activate_script = self.full_path / 'bin' / 'activate'
