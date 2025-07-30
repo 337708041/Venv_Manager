@@ -41,17 +41,25 @@ class SettingsDialog(QDialog):
 
         # 包管理设置组
         pkg_group = QGroupBox('包管理设置')
-        pkg_layout = QFormLayout()
+        pkg_layout = QHBoxLayout()
 
         # 自动升级pip
+        auto_upgrade_pip_layout = QHBoxLayout()
+        auto_upgrade_pip_label = QLabel('自动升级pip:')
         self.auto_upgrade_pip = QCheckBox()
         self.auto_upgrade_pip.setToolTip('创建新环境时自动升级pip')
-        pkg_layout.addRow('自动升级pip:', self.auto_upgrade_pip)
+        auto_upgrade_pip_layout.addWidget(auto_upgrade_pip_label)
+        auto_upgrade_pip_layout.addWidget(self.auto_upgrade_pip)
+        pkg_layout.addLayout(auto_upgrade_pip_layout)
 
         # 显示包大小
+        show_pkg_size_layout = QHBoxLayout()
+        show_pkg_size_label = QLabel('显示包大小:')
         self.show_pkg_size = QCheckBox()
         self.show_pkg_size.setToolTip('在包列表中显示包大小')
-        pkg_layout.addRow('显示包大小:', self.show_pkg_size)
+        show_pkg_size_layout.addWidget(show_pkg_size_label)
+        show_pkg_size_layout.addWidget(self.show_pkg_size)
+        pkg_layout.addLayout(show_pkg_size_layout)
 
         pkg_group.setLayout(pkg_layout)
         layout.addWidget(pkg_group)
