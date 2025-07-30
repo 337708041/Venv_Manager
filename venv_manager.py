@@ -3,6 +3,7 @@ import venv
 import shutil
 import subprocess
 import logging
+import logging.handlers
 from pathlib import Path
 from datetime import datetime
 import threading
@@ -29,8 +30,13 @@ class VenvManager:
         # 设置日志文件路径
         log_path = os.path.join(log_dir, 'venv_manager.log')
         
-        # 创建日志文件处理器
-        fh = logging.FileHandler(log_path, encoding='utf-8')
+        # 创建日志滚动处理器 (5MB/文件，保留3个备份)
+        fh = logging.handlers.RotatingFileHandler(
+            log_path, 
+            maxBytes=5*1024*1024, 
+            backupCount=3,
+            encoding='utf-8'
+        )
         fh.setLevel(logging.INFO)
         
         # 设置日志格式
