@@ -114,8 +114,9 @@ class VenvManager:
         if not full_path.exists():
             raise Exception(f"虚拟环境 {venv_path} 不存在")
         
-        # 创建并启动工作线程
-        worker = ActivateWorker(venv_path, full_path, self.logger)
+        # 创建并启动工作线程，在父目录中激活
+        parent_path = full_path.parent
+        worker = ActivateWorker(venv_path, parent_path, self.logger)
         worker.start()
         return worker
 
