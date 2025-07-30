@@ -30,7 +30,7 @@ class VenvManager:
         # 设置日志文件路径
         log_path = os.path.join(log_dir, 'venv_manager.log')
         
-        # 创建日志滚动处理器 (5MB/文件，保留3个备份)
+        # 创建日志滚动处理器 (512K/文件，保留3个备份)
         fh = logging.handlers.RotatingFileHandler(
             log_path, 
             maxBytes=512*1024, 
