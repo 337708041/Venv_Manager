@@ -102,4 +102,4 @@ A: 在创建环境时输入路径，如：subdir/myenv。
 
 版权信息
 ------
-本软件为免费开源软件，欢迎使用和改进。 
+本项目使用Apache-2.0 license，版权属于 [MAO-NIANG](https://github.com/MAO-NIANG)
