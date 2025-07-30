@@ -33,7 +33,7 @@ class VenvManager:
         # 创建日志滚动处理器 (5MB/文件，保留3个备份)
         fh = logging.handlers.RotatingFileHandler(
             log_path, 
-            maxBytes=5*1024*1024, 
+            maxBytes=512*1024, 
             backupCount=3,
             encoding='utf-8'
         )
