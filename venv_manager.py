@@ -198,6 +198,22 @@ class VenvManager:
         if os.name == 'nt':
             return (path / 'Scripts' / 'python.exe').exists()
         return (path / 'bin' / 'python').exists()
+        
+    def get_python_version(self, path):
+        """获取虚拟环境的Python版本"""
+        try:
+            python_exe = path / 'Scripts' / 'python.exe' if os.name == 'nt' else path / 'bin' / 'python'
+            if python_exe.exists():
+                result = subprocess.run([str(python_exe), '--version'], 
+                                       capture_output=True, text=True, timeout=3)
+                if result.returncode == 0:
+                    # 通常输出格式为 "Python 3.x.y"
+                    return result.stdout.strip()
+                else:
+                    return "未知版本"
+            return "未知版本"
+        except Exception:
+            return "未知版本"
 
 class ActivateWorker(threading.Thread):
     """虚拟环境激活工作线程"""

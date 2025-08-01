@@ -17,6 +17,7 @@ class ConfigManager:
             'max_threads': 32,                        # 最大线程数
             'auto_upgrade_pip': True,                 # 自动升级pip
             'show_pkg_size': False,                   # 显示包大小
+            'show_python_version': False,             # 显示Python版本
             'window_geometry': None,                  # 窗口位置和大小
             'last_used_paths': [],                    # 最近使用的路径
         }

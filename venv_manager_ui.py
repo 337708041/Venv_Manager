@@ -18,7 +18,7 @@ class VenvWorker(QThread):
     """工作线程类，用于处理耗时的虚拟环境操作"""
     finished = pyqtSignal(bool, str)  # 操作完成信号
     progress = pyqtSignal(int, str)   # 进度信号
-    venv_found = pyqtSignal(str)      # 发现虚拟环境信号
+    venv_found = pyqtSignal(str, str)  # 发现虚拟环境信号 (路径, Python版本)
 
     def __init__(self, operation, venv_manager, config=None, **kwargs):
         super().__init__()
@@ -142,7 +142,11 @@ class VenvWorker(QThread):
                                 try:
                                     if self.venv_manager._is_valid_venv(path):
                                         rel_path = str(path.relative_to(self.venv_manager.base_path))
-                                        self.venv_found.emit(rel_path)
+                                        # 获取Python版本
+                                        python_version = ""
+                                        if self.config.get('show_python_version'):
+                                            python_version = self.venv_manager.get_python_version(path)
+                                        self.venv_found.emit(rel_path, python_version)
                                         results.append(rel_path)
                                     
                                     for item in path.iterdir():
@@ -270,15 +274,25 @@ class VenvManagerWindow(QMainWindow):
             self.worker.venv_found.connect(self.add_venv_to_list)
         return self.worker
 
-    def add_venv_to_list(self, venv_path):
+    def add_venv_to_list(self, venv_path, python_version=""):
         """添加发现的虚拟环境到列表"""
         # 检查是否已存在
         items = self.venv_list.findItems(venv_path, Qt.MatchExactly)
         if not items:
-            self.venv_list.addItem(venv_path)
+            display_text = venv_path
+            if python_version and self.config.get('show_python_version'):
+                display_text = f"{venv_path} [{python_version}]"
+            self.venv_list.addItem(display_text)
             # 按字母顺序排序
             self.venv_list.sortItems()
 
+    def get_venv_path_from_text(self, text):
+        """从列表项文本中提取虚拟环境路径"""
+        # 如果文本包含Python版本信息，则提取路径部分
+        if '[' in text and ']' in text:
+            return text.split('[')[0].strip()
+        return text
+        
     def init_ui(self):
         self.setWindowTitle('Python虚拟环境管理器')
         self.setGeometry(300, 300, 600, 400)
@@ -380,7 +394,7 @@ class VenvManagerWindow(QMainWindow):
             QMessageBox.warning(self, '警告', '请选择要激活的虚拟环境')
             return
             
-        venv_name = selected.text()
+        venv_name = self.get_venv_path_from_text(selected.text())
         try:
             # 启动激活线程
             worker = self.venv_manager.activate_venv(venv_name)
@@ -468,7 +482,8 @@ class VenvManagerWindow(QMainWindow):
     
     def show_venv_info(self, item):
         """显示包管理器"""
-        venv_path = self.venv_manager.base_path / item.text()
+        venv_path_text = self.get_venv_path_from_text(item.text())
+        venv_path = self.venv_manager.base_path / venv_path_text
         dialog = PackageManagerDialog(venv_path, self)
         dialog.exec_()
 
@@ -493,7 +508,8 @@ class VenvManagerWindow(QMainWindow):
         self.max_scan_depth = self.config.get('scan_depth')
         self.max_threads = self.config.get('max_threads')
         # 如果设置改变了，刷新列表
-        if self.config.get('auto_refresh'):
+        # 当显示Python版本设置改变时，始终刷新列表
+        if self.config.get('auto_refresh') or self.config.get('show_python_version'):
             self.refresh_venv_list() 
 
     def copy_venv(self):
@@ -503,7 +519,7 @@ class VenvManagerWindow(QMainWindow):
             QMessageBox.warning(self, '警告', '请选择要复制的虚拟环境')
             return
         
-        source_name = selected.text()
+        source_name = self.get_venv_path_from_text(selected.text())
         target_name, ok = QInputDialog.getText(
             self, '复制虚拟环境',
             '请输入新环境名称:',

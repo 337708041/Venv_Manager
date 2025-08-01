@@ -41,26 +41,41 @@ class SettingsDialog(QDialog):
 
         # 包管理设置组
         pkg_group = QGroupBox('包管理设置')
-        pkg_layout = QHBoxLayout()
+        pkg_layout = QVBoxLayout()
 
+        # 第一行：自动升级pip和显示包大小
+        first_row_layout = QHBoxLayout()
+        
         # 自动升级pip
         auto_upgrade_pip_layout = QHBoxLayout()
-        auto_upgrade_pip_label = QLabel('自动升级pip:')
-        self.auto_upgrade_pip = QCheckBox()
+        self.auto_upgrade_pip = QCheckBox('自动升级pip')
         self.auto_upgrade_pip.setToolTip('创建新环境时自动升级pip')
-        auto_upgrade_pip_layout.addWidget(auto_upgrade_pip_label)
         auto_upgrade_pip_layout.addWidget(self.auto_upgrade_pip)
-        pkg_layout.addLayout(auto_upgrade_pip_layout)
-
+        first_row_layout.addLayout(auto_upgrade_pip_layout)
+        
         # 显示包大小
         show_pkg_size_layout = QHBoxLayout()
-        show_pkg_size_label = QLabel('显示包大小:')
-        self.show_pkg_size = QCheckBox()
+        self.show_pkg_size = QCheckBox('显示包大小')
         self.show_pkg_size.setToolTip('在包列表中显示包大小')
-        show_pkg_size_layout.addWidget(show_pkg_size_label)
         show_pkg_size_layout.addWidget(self.show_pkg_size)
-        pkg_layout.addLayout(show_pkg_size_layout)
-
+        first_row_layout.addLayout(show_pkg_size_layout)
+        
+        pkg_layout.addLayout(first_row_layout)
+        
+        # 第二行：显示Python版本
+        second_row_layout = QHBoxLayout()
+        second_row_layout.setAlignment(Qt.AlignLeft)  # 强制左对齐
+        
+        # 显示Python版本
+        show_python_version_layout = QHBoxLayout()
+        show_python_version_layout.setAlignment(Qt.AlignLeft)  # 强制左对齐
+        self.show_python_version = QCheckBox('显示Python版本')
+        self.show_python_version.setToolTip('在虚拟环境列表中显示Python版本')
+        show_python_version_layout.addWidget(self.show_python_version)
+        second_row_layout.addLayout(show_python_version_layout)
+        
+        pkg_layout.addLayout(second_row_layout)
+        
         pkg_group.setLayout(pkg_layout)
         layout.addWidget(pkg_group)
 
@@ -86,6 +101,7 @@ class SettingsDialog(QDialog):
         self.max_threads.setValue(self.config.get('max_threads'))
         self.auto_upgrade_pip.setChecked(self.config.get('auto_upgrade_pip'))
         self.show_pkg_size.setChecked(self.config.get('show_pkg_size'))
+        self.show_python_version.setChecked(self.config.get('show_python_version'))
 
     def save_settings(self):
         """保存设置到配置"""
@@ -94,6 +110,7 @@ class SettingsDialog(QDialog):
         self.config.set('max_threads', self.max_threads.value())
         self.config.set('auto_upgrade_pip', self.auto_upgrade_pip.isChecked())
         self.config.set('show_pkg_size', self.show_pkg_size.isChecked())
+        self.config.set('show_python_version', self.show_python_version.isChecked())
         self.accept()
 
     def reset_settings(self):
@@ -109,5 +126,6 @@ class SettingsDialog(QDialog):
         self.config.set('max_threads', self.max_threads.value())
         self.config.set('auto_upgrade_pip', self.auto_upgrade_pip.isChecked())
         self.config.set('show_pkg_size', self.show_pkg_size.isChecked())
+        self.config.set('show_python_version', self.show_python_version.isChecked())
         
         super().accept() 
