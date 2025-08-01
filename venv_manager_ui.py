@@ -1,8 +1,9 @@
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                           QPushButton, QLineEdit, QLabel, QListWidget,
+                           QPushButton, QLineEdit, QLabel, QListWidget, QListWidgetItem,
                            QMessageBox, QFileDialog, QProgressBar, QDialog,
-                           QInputDialog)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSettings
+                           QInputDialog, QStyledItemDelegate, QStyle)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSettings, QRect
+from PyQt5.QtGui import QPainter, QFontMetrics
 from venv_manager import VenvManager
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -13,6 +14,51 @@ from config_manager import ConfigManager
 from components import PathSelector, ProgressWidget, InputWithButton, ButtonGroup, PythonSelector
 import os
 import subprocess
+
+class VenvItemDelegate(QStyledItemDelegate):
+    """自定义列表项代理,用于在最右侧显示Python版本"""
+    
+    def paint(self, painter, option, index):
+        # 获取项目数据
+        venv_path = index.data()
+        python_version = index.data(Qt.UserRole + 1)
+        
+        # 如果没有Python版本信息，使用默认绘制
+        if not python_version:
+            super().paint(painter, option, index)
+            return
+            
+        # 保存画笔状态
+        painter.save()
+        
+        # 绘制选中状态背景
+        if option.state & QStyle.State_Selected:
+            painter.fillRect(option.rect, option.palette.highlight())
+            painter.setPen(option.palette.highlightedText().color())
+        else:
+            painter.setPen(option.palette.text().color())
+            
+        # 计算文本区域
+        text_rect = QRect(option.rect)
+        text_rect.setWidth(text_rect.width() - 5)  # 右边留出一点空间
+        
+        # 获取版本文本的宽度
+        version_text = f"[{python_version}]"
+        font_metrics = QFontMetrics(option.font)
+        version_width = font_metrics.horizontalAdvance(version_text)
+        
+        # 绘制路径文本（左对齐）
+        path_rect = QRect(text_rect)
+        path_rect.setRight(text_rect.right() - version_width - 10)  # 为版本文本留出空间
+        painter.drawText(path_rect, Qt.AlignLeft | Qt.AlignVCenter, venv_path)
+        
+        # 绘制版本文本（右对齐）
+        version_rect = QRect(text_rect)
+        version_rect.setLeft(text_rect.right() - version_width)
+        painter.drawText(version_rect, Qt.AlignRight | Qt.AlignVCenter, version_text)
+        
+        # 恢复画笔状态
+        painter.restore()
 
 class VenvWorker(QThread):
     """工作线程类，用于处理耗时的虚拟环境操作"""
@@ -279,17 +325,37 @@ class VenvManagerWindow(QMainWindow):
         # 检查是否已存在
         items = self.venv_list.findItems(venv_path, Qt.MatchExactly)
         if not items:
-            display_text = venv_path
+            item = QListWidgetItem()
+            item.setData(Qt.UserRole, venv_path)  # 存储原始路径
+            
             if python_version and self.config.get('show_python_version'):
-                display_text = f"{venv_path} [{python_version}]"
-            self.venv_list.addItem(display_text)
+                # 创建自定义显示，确保版本信息在最右边
+                item.setText(venv_path)
+                item.setData(Qt.UserRole + 1, python_version)  # 存储Python版本
+            else:
+                item.setText(venv_path)
+                
+            self.venv_list.addItem(item)
             # 按字母顺序排序
             self.venv_list.sortItems()
 
-    def get_venv_path_from_text(self, text):
-        """从列表项文本中提取虚拟环境路径"""
-        # 如果文本包含Python版本信息，则提取路径部分
+    def get_venv_path_from_text(self, item_or_text):
+        """从列表项或文本中提取虚拟环境路径"""
+        # 如果是QListWidgetItem对象
+        if isinstance(item_or_text, QListWidgetItem):
+            # 优先使用存储的原始路径
+            stored_path = item_or_text.data(Qt.UserRole)
+            if stored_path:
+                return stored_path
+            return item_or_text.text()
+        
+        # 如果是文本字符串（兼容旧代码）
+        text = item_or_text
         if '[' in text and ']' in text:
+            # 处理制表符分隔的格式
+            if '\t' in text:
+                return text.split('\t')[0].strip()
+            # 兼容旧格式
             return text.split('[')[0].strip()
         return text
         
@@ -311,6 +377,8 @@ class VenvManagerWindow(QMainWindow):
         self.venv_list = QListWidget()
         self.venv_list.setAlternatingRowColors(True)
         self.venv_list.setSelectionMode(QListWidget.ExtendedSelection)
+        # 设置自定义代理，确保Python版本显示在最右边
+        self.venv_list.setItemDelegate(VenvItemDelegate())
         layout.addWidget(QLabel('已存在的虚拟环境:'))
         layout.addWidget(self.venv_list)
         
@@ -394,7 +462,7 @@ class VenvManagerWindow(QMainWindow):
             QMessageBox.warning(self, '警告', '请选择要激活的虚拟环境')
             return
             
-        venv_name = self.get_venv_path_from_text(selected.text())
+        venv_name = self.get_venv_path_from_text(selected)
         try:
             # 启动激活线程
             worker = self.venv_manager.activate_venv(venv_name)
@@ -519,7 +587,7 @@ class VenvManagerWindow(QMainWindow):
             QMessageBox.warning(self, '警告', '请选择要复制的虚拟环境')
             return
         
-        source_name = self.get_venv_path_from_text(selected.text())
+        source_name = self.get_venv_path_from_text(selected)
         target_name, ok = QInputDialog.getText(
             self, '复制虚拟环境',
             '请输入新环境名称:',
