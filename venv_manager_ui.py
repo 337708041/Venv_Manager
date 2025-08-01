@@ -1,3 +1,4 @@
+import logging
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QPushButton, QLineEdit, QLabel, QListWidget, QListWidgetItem,
                            QMessageBox, QFileDialog, QProgressBar, QDialog,
@@ -110,6 +111,7 @@ class VenvWorker(QThread):
                                 subprocess.run([str(target_python), '-m', 'pip', 'install', req.strip()],
                                             check=True, capture_output=True, text=True)
                             except subprocess.CalledProcessError as e:
+                                logging.error(f"安装包失败: {req}, 错误: {e.stderr}")
                                 print(f"Warning: Failed to install {req}: {e.stderr}")
                 
                 self.progress.emit(100, "完成")
@@ -216,6 +218,7 @@ class VenvWorker(QThread):
                                 self.progress.emit(progress, "正在扫描...")
                                 
                         except Exception as e:
+                            logging.error(f"扫描目录失败: {root_dir}, 错误: {str(e)}")
                             print(f"Error scanning directory {root_dir}: {e}")
                     
                     # 使用配置的线程数
@@ -247,6 +250,7 @@ class VenvWorker(QThread):
                         self.progress.emit(progress, f"正在删除 {name}...")
                         self.venv_manager.delete_venv(name)
                     except Exception as e:
+                        logging.error(f"删除虚拟环境失败: {name}, 错误: {str(e)}")
                         print(f"Warning: Failed to delete {name}: {str(e)}")
                 
                 self.progress.emit(100, "完成")
@@ -254,7 +258,12 @@ class VenvWorker(QThread):
                     self.finished.emit(True, f"虚拟环境 {venv_names[0]} 删除成功")
                 else:
                     self.finished.emit(True, f"{total} 个虚拟环境删除成功")
+        except FileNotFoundError as e:
+            logging.exception(f"操作失败: {self.operation}, 未找到文件: {str(e)}")
+            self.progress.emit(0, f"错误: 未找到指定的文件，请检查Python路径是否正确")
+            self.finished.emit(False, "未找到指定的文件")
         except Exception as e:
+            logging.exception(f"操作失败: {self.operation}")
             self.progress.emit(0, f"错误: {str(e)}")
             self.finished.emit(False, str(e))
 
@@ -429,8 +438,9 @@ class VenvManagerWindow(QMainWindow):
             QMessageBox.warning(self, '警告', '请输入虚拟环境名称')
             return
             
-        if '/' in name or '\\' in name:
-            parent_dir = self.venv_manager.base_path / Path(name).parent
+        name_path = Path(name)
+        if name_path.parts:
+            parent_dir = self.venv_manager.base_path / name_path.parent
             parent_dir.mkdir(parents=True, exist_ok=True)
         
         # 获取选中的Python解释器路径
@@ -546,6 +556,7 @@ class VenvManagerWindow(QMainWindow):
                 self.config.add_recent_path(new_path)
                 self.refresh_venv_list()
             except Exception as e:
+                logging.error(f"更改路径失败: {new_path}, 错误: {str(e)}")
                 QMessageBox.critical(self, '错误', f'更改路径失败: {str(e)}')
     
     def show_venv_info(self, item):
@@ -600,8 +611,9 @@ class VenvManagerWindow(QMainWindow):
                 QMessageBox.warning(self, '警告', '新环境名称不能与源环境相同')
                 return
             
-            if '/' in target_name or '\\' in target_name:
-                parent_dir = self.venv_manager.base_path / Path(target_name).parent
+            target_path = Path(target_name)
+            if target_path.parts:
+                parent_dir = self.venv_manager.base_path / target_path.parent
                 parent_dir.mkdir(parents=True, exist_ok=True)
             
             self.progress_widget.progress_bar.setValue(0)
