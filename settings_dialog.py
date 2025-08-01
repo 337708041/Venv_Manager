@@ -47,18 +47,14 @@ class SettingsDialog(QDialog):
         first_row_layout = QHBoxLayout()
         
         # 自动升级pip
-        auto_upgrade_pip_layout = QHBoxLayout()
         self.auto_upgrade_pip = QCheckBox('自动升级pip')
         self.auto_upgrade_pip.setToolTip('创建新环境时自动升级pip')
-        auto_upgrade_pip_layout.addWidget(self.auto_upgrade_pip)
-        first_row_layout.addLayout(auto_upgrade_pip_layout)
+        first_row_layout.addWidget(self.auto_upgrade_pip)
         
         # 显示包大小
-        show_pkg_size_layout = QHBoxLayout()
         self.show_pkg_size = QCheckBox('显示包大小')
         self.show_pkg_size.setToolTip('在包列表中显示包大小')
-        show_pkg_size_layout.addWidget(self.show_pkg_size)
-        first_row_layout.addLayout(show_pkg_size_layout)
+        first_row_layout.addWidget(self.show_pkg_size)
         
         pkg_layout.addLayout(first_row_layout)
         
@@ -67,12 +63,9 @@ class SettingsDialog(QDialog):
         second_row_layout.setAlignment(Qt.AlignLeft)  # 强制左对齐
         
         # 显示Python版本
-        show_python_version_layout = QHBoxLayout()
-        show_python_version_layout.setAlignment(Qt.AlignLeft)  # 强制左对齐
         self.show_python_version = QCheckBox('显示Python版本')
         self.show_python_version.setToolTip('在虚拟环境列表中显示Python版本')
-        show_python_version_layout.addWidget(self.show_python_version)
-        second_row_layout.addLayout(show_python_version_layout)
+        second_row_layout.addWidget(self.show_python_version)
         
         pkg_layout.addLayout(second_row_layout)
         
