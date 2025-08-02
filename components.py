@@ -29,49 +29,22 @@ class ProgressWidget(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         
+        # 状态标签
         self.status_label = QLabel()
         self.status_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.status_label.setMinimumWidth(150)
+        self.status_label.setMinimumWidth(120)
+        self.status_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         
+        # 进度条
         self.progress_bar = QProgressBar()
-        self.progress_bar.setTextVisible(False)
-        
-        # 设置进度条的大小策略，使其占用75%的宽度
+        self.progress_bar.setTextVisible(False)  # 不显示百分比
         self.progress_bar.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         
-        # 创建一个包装器widget来控制进度条的宽度
-        self.progress_wrapper = QWidget()
-        progress_layout = QHBoxLayout(self.progress_wrapper)
-        progress_layout.setContentsMargins(0, 0, 0, 0)
-        progress_layout.addWidget(self.progress_bar)
-        
-        layout.addWidget(self.status_label)
-        layout.addWidget(self.progress_wrapper)
-        layout.addStretch()
+        # 添加到布局
+        layout.addWidget(self.status_label, 2)  # 状态标签占用2份空间
+        layout.addWidget(self.progress_bar, 8)  # 进度条占用8份空间
         
         self.hide()
-
-    def showEvent(self, event):
-        """组件显示时更新宽度"""
-        super().showEvent(event)
-        self.update_progress_width()
-        
-        # 设置父窗口的resize事件
-        if self.parent() and not hasattr(self.parent(), '_original_resize_event'):
-            self.parent()._original_resize_event = self.parent().resizeEvent
-            self.parent().resizeEvent = self._handle_parent_resize
-
-    def _handle_parent_resize(self, event):
-        """处理父窗口大小变化"""
-        if hasattr(self.parent(), '_original_resize_event'):
-            self.parent()._original_resize_event(event)
-        self.update_progress_width()
-
-    def update_progress_width(self):
-        """更新进度条宽度"""
-        if self.parent():
-            width = int(self.parent().width() * 0.75)
-            self.progress_wrapper.setFixedWidth(width)
 
     def update_progress(self, value, message):
         """更新进度"""
@@ -111,17 +84,30 @@ class PythonSelector(QWidget):
     """Python解释器选择组件"""
     def __init__(self, parent=None):
         super().__init__(parent)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
         
+        # 创建主布局
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(8)  # 设置标准间距
+        
+        # 创建标签
         self.python_label = QLabel('Python解释器:')
-        self.python_combo = QComboBox()
-        self.python_combo.setMinimumWidth(200)
-        self.refresh_btn = QPushButton('刷新')
+        self.python_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         
-        layout.addWidget(self.python_label)
-        layout.addWidget(self.python_combo)
-        layout.addWidget(self.refresh_btn)
+        # 创建下拉框
+        self.python_combo = QComboBox()
+        self.python_combo.setMinimumWidth(250)  # 增加宽度以便更好地显示路径
+        self.python_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        # 创建刷新按钮
+        self.refresh_btn = QPushButton('刷新')
+        self.refresh_btn.setToolTip('刷新Python解释器列表')
+        self.refresh_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        
+        # 添加组件到布局
+        main_layout.addWidget(self.python_label)
+        main_layout.addWidget(self.python_combo, 1)  # 设置为可伸缩
+        main_layout.addWidget(self.refresh_btn)
         
         # 连接信号
         self.refresh_btn.clicked.connect(self.scan_python_interpreters)

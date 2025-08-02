@@ -404,7 +404,8 @@ class VenvManagerWindow(QMainWindow):
         create_layout.addWidget(self.create_input)
         
         # 创建按钮
-        create_btn = QPushButton('创建虚拟环境')
+        create_btn = QPushButton('创建环境')
+        create_btn.setToolTip('创建新的虚拟环境')
         create_btn.clicked.connect(self.create_venv)
         create_layout.addWidget(create_btn)
         
