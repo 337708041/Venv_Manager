@@ -1,6 +1,8 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-                           QLabel, QLineEdit, QProgressBar, QSizePolicy, QComboBox, QFileDialog, QMessageBox)
-from PyQt5.QtCore import Qt
+                           QLabel, QLineEdit, QProgressBar, QSizePolicy, QComboBox, QFileDialog, QMessageBox,
+                           QStyledItemDelegate, QStyle)
+from PyQt5.QtCore import Qt, QRect, QPropertyAnimation, QEasingCurve
+from PyQt5.QtGui import QPainter, QFontMetrics
 import sys
 import os
 from pathlib import Path
@@ -13,7 +15,7 @@ class PathSelector(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        self.path_label = QLabel('当前路径:')
+        self.path_label = QLabel('路径:')
         self.path_display = QLineEdit()
         self.path_display.setReadOnly(True)
         self.change_path_btn = QPushButton('更改路径')
@@ -44,12 +46,21 @@ class ProgressWidget(QWidget):
         layout.addWidget(self.status_label, 2)  # 状态标签占用2份空间
         layout.addWidget(self.progress_bar, 8)  # 进度条占用8份空间
         
+        # 创建动画对象
+        self.animation = QPropertyAnimation(self.progress_bar, b"value")
+        self.animation.setEasingCurve(QEasingCurve.OutCubic)  # 使用平滑的缓动曲线
+        self.animation.setDuration(300)  # 动画持续300毫秒
+        
         self.hide()
 
     def update_progress(self, value, message):
         """更新进度"""
         self.show()
-        self.progress_bar.setValue(value)
+        # 设置动画的起始值和结束值
+        self.animation.setStartValue(self.progress_bar.value())
+        self.animation.setEndValue(value)
+        # 启动动画
+        self.animation.start()
         self.status_label.setText(message)
 
 class InputWithButton(QWidget):
@@ -289,3 +300,49 @@ class PythonSelector(QWidget):
     def get_selected_python(self):
         """获取选中的Python解释器路径"""
         return self.python_combo.currentData() 
+
+class VenvItemDelegate(QStyledItemDelegate):
+    """自定义列表项代理,用于在最右侧显示Python版本"""
+    
+    def paint(self, painter, option, index):
+        # 获取项目数据
+        venv_path = index.data()
+        python_version = index.data(Qt.UserRole + 1)
+        
+        # 如果没有Python版本信息，使用默认绘制
+        if not python_version:
+            super().paint(painter, option, index)
+            return
+            
+        # 保存画笔状态
+        painter.save()
+        
+        # 绘制选中状态背景
+        if option.state & QStyle.State_Selected:
+            painter.fillRect(option.rect, option.palette.highlight())
+            painter.setPen(option.palette.highlightedText().color())
+        else:
+            painter.setPen(option.palette.text().color())
+            
+        # 计算文本区域
+        text_rect = QRect(option.rect)
+        text_rect.setWidth(text_rect.width() - 5)  # 右边留出一点空间
+        
+        # 获取版本文本的宽度
+        version_text = f"[{python_version}]"
+        font_metrics = QFontMetrics(option.font)
+        version_width = font_metrics.horizontalAdvance(version_text)
+        
+        # 绘制路径文本（左对齐）
+        path_rect = QRect(text_rect)
+        path_rect.setLeft(text_rect.left())
+        path_rect.setRight(text_rect.right() - version_width - 10)  # 为版本文本留出空间
+        painter.drawText(path_rect, Qt.AlignLeft | Qt.AlignVCenter, venv_path)
+        
+        # 绘制版本文本（右对齐）
+        version_rect = QRect(text_rect)
+        version_rect.setLeft(text_rect.right() - version_width)
+        painter.drawText(version_rect, Qt.AlignRight | Qt.AlignVCenter, version_text)
+        
+        # 恢复画笔状态
+        painter.restore()

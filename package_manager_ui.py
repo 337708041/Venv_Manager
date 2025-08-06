@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton, 
                            QListWidget, QLabel, QLineEdit, QMessageBox, QProgressBar,
                            QWidget, QFileDialog, QProgressDialog)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSettings
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSettings, QPropertyAnimation, QEasingCurve
 from concurrent.futures import ThreadPoolExecutor
 import subprocess
 import json
@@ -349,7 +349,13 @@ class PackageManagerDialog(QDialog):
 
     def update_progress(self, value, message):
         self.progress_widget.show()
-        self.progress_bar.setValue(value)
+        # 创建动画效果
+        animation = QPropertyAnimation(self.progress_bar, b"value")
+        animation.setEasingCurve(QEasingCurve.OutCubic)
+        animation.setDuration(300)
+        animation.setStartValue(self.progress_bar.value())
+        animation.setEndValue(value)
+        animation.start()
         self.status_label.setText(message)
 
     def refresh_packages(self):

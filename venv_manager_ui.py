@@ -2,270 +2,22 @@ import logging
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QPushButton, QLineEdit, QLabel, QListWidget, QListWidgetItem,
                            QMessageBox, QFileDialog, QProgressBar, QDialog,
-                           QInputDialog, QStyledItemDelegate, QStyle)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QSettings, QRect
-from PyQt5.QtGui import QPainter, QFontMetrics
+                           QInputDialog, QMenuBar, QMenu, QAction)
+from PyQt5.QtCore import Qt, QTimer, QSettings
 from venv_manager import VenvManager
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
-from multiprocessing import Value, Lock
 from package_manager_ui import PackageManagerDialog
 from settings_dialog import SettingsDialog
 from config_manager import ConfigManager
-from components import PathSelector, ProgressWidget, InputWithButton, ButtonGroup, PythonSelector
+from components import PathSelector, ProgressWidget, InputWithButton, PythonSelector, VenvItemDelegate
+from workers import VenvWorker
 import os
-import subprocess
 
-class VenvItemDelegate(QStyledItemDelegate):
-    """自定义列表项代理,用于在最右侧显示Python版本"""
-    
-    def paint(self, painter, option, index):
-        # 获取项目数据
-        venv_path = index.data()
-        python_version = index.data(Qt.UserRole + 1)
-        
-        # 如果没有Python版本信息，使用默认绘制
-        if not python_version:
-            super().paint(painter, option, index)
-            return
-            
-        # 保存画笔状态
-        painter.save()
-        
-        # 绘制选中状态背景
-        if option.state & QStyle.State_Selected:
-            painter.fillRect(option.rect, option.palette.highlight())
-            painter.setPen(option.palette.highlightedText().color())
-        else:
-            painter.setPen(option.palette.text().color())
-            
-        # 计算文本区域
-        text_rect = QRect(option.rect)
-        text_rect.setWidth(text_rect.width() - 5)  # 右边留出一点空间
-        
-        # 获取版本文本的宽度
-        version_text = f"[{python_version}]"
-        font_metrics = QFontMetrics(option.font)
-        version_width = font_metrics.horizontalAdvance(version_text)
-        
-        # 绘制路径文本（左对齐）
-        path_rect = QRect(text_rect)
-        path_rect.setRight(text_rect.right() - version_width - 10)  # 为版本文本留出空间
-        painter.drawText(path_rect, Qt.AlignLeft | Qt.AlignVCenter, venv_path)
-        
-        # 绘制版本文本（右对齐）
-        version_rect = QRect(text_rect)
-        version_rect.setLeft(text_rect.right() - version_width)
-        painter.drawText(version_rect, Qt.AlignRight | Qt.AlignVCenter, version_text)
-        
-        # 恢复画笔状态
-        painter.restore()
+# 应用版本信息
+APP_NAME = "Python虚拟环境管理器"
+APP_VERSION = "1.0"
+APP_AUTHOR = "MAO-NIANG"
 
-class VenvWorker(QThread):
-    """工作线程类，用于处理耗时的虚拟环境操作"""
-    finished = pyqtSignal(bool, str)  # 操作完成信号
-    progress = pyqtSignal(int, str)   # 进度信号
-    venv_found = pyqtSignal(str, str)  # 发现虚拟环境信号 (路径, Python版本)
-
-    def __init__(self, operation, venv_manager, config=None, **kwargs):
-        super().__init__()
-        self.operation = operation
-        self.venv_manager = venv_manager
-        self.config = config  # 添加配置对象
-        self.kwargs = kwargs
-        self.is_scanning = False
-        self.is_cancelled = False
-
-    def cancel(self):
-        """取消扫描"""
-        self.is_cancelled = True
-
-    def run(self):
-        try:
-            if self.operation == 'copy':
-                source_name = self.kwargs['source']
-                target_name = self.kwargs['target']
-                
-                self.progress.emit(10, "正在复制虚拟环境...")
-                source_path = self.venv_manager.base_path / source_name
-                target_path = self.venv_manager.base_path / target_name
-                
-                # 创建新环境
-                self.progress.emit(30, "创建目标环境...")
-                self.venv_manager.create_venv(target_name)
-                
-                # 获取源环境的包列表
-                self.progress.emit(50, "获取包列表...")
-                python_path = source_path / ('Scripts' if os.name == 'nt' else 'bin') / ('python.exe' if os.name == 'nt' else 'python')
-                result = subprocess.run([str(python_path), '-m', 'pip', 'freeze'], 
-                                    capture_output=True, text=True, check=True)
-                requirements = result.stdout.splitlines()
-                
-                if requirements:
-                    # 安装包到新环境
-                    self.progress.emit(70, "安装包...")
-                    target_python = target_path / ('Scripts' if os.name == 'nt' else 'bin') / ('python.exe' if os.name == 'nt' else 'python')
-                    for req in requirements:
-                        if req.strip() and not req.startswith('#'):
-                            try:
-                                subprocess.run([str(target_python), '-m', 'pip', 'install', req.strip()],
-                                            check=True, capture_output=True, text=True)
-                            except subprocess.CalledProcessError as e:
-                                logging.error(f"安装包失败: {req}, 错误: {e.stderr}")
-                                print(f"Warning: Failed to install {req}: {e.stderr}")
-                
-                self.progress.emit(100, "完成")
-                self.finished.emit(True, f"虚拟环境 {source_name} 已复制到 {target_name}")
-                
-            elif self.operation == 'create':
-                # 创建环境的进度步骤
-                self.progress.emit(10, "正在创建虚拟环境...")
-                python_path = self.kwargs.get('python_path')
-                self.venv_manager.create_venv(
-                    self.kwargs['name'],
-                    python_path=python_path
-                )
-                
-                # 使用新创建环境的Python解释器
-                if self.config.get('auto_upgrade_pip', True):
-                    self.progress.emit(50, "正在升级pip...")
-                    venv_path = self.venv_manager.base_path / self.kwargs['name']
-                    python_path = venv_path / ('Scripts' if os.name == 'nt' else 'bin') / ('python.exe' if os.name == 'nt' else 'python')
-                    
-                    try:
-                        # 首先确保pip已安装
-                        subprocess.run([str(python_path), '-m', 'ensurepip', '--upgrade'],
-                                    check=True, capture_output=True, text=True)
-                        
-                        # 升级pip
-                        subprocess.run([str(python_path), '-m', 'pip', 'install', '--upgrade', 'pip'],
-                                    check=True, capture_output=True, text=True)
-                        
-                        # 安装基本包
-                        subprocess.run([str(python_path), '-m', 'pip', 'install', 'setuptools', 'wheel'],
-                                    check=True, capture_output=True, text=True)
-                        
-                    except subprocess.CalledProcessError as e:
-                        print(f"Warning: Failed to upgrade pip: {e.stderr}")
-                        # 继续执行，不中断创建过程
-                
-                self.progress.emit(100, "完成")
-                self.finished.emit(True, f"虚拟环境 {self.kwargs['name']} 创建成功")
-            elif self.operation == 'delete':
-                self.progress.emit(30, "正在删除虚拟环境...")
-                self.venv_manager.delete_venv(self.kwargs['name'])
-                self.progress.emit(100, "完成")
-                self.finished.emit(True, f"虚拟环境 {self.kwargs['name']} 删除成功")
-            elif self.operation == 'activate':
-                self.venv_manager.activate_venv(self.kwargs['name'])
-                self.finished.emit(True, f"虚拟环境 {self.kwargs['name']} 已激活")
-            elif self.operation == 'list':
-                self.is_scanning = True
-                self.is_cancelled = False
-                try:
-                    root_dirs = [d for d in self.venv_manager.base_path.iterdir() if d.is_dir()]
-                    total_items = len(root_dirs)
-                    self.progress.emit(0, "开始扫描...")
-                    
-                    if total_items == 0:
-                        self.progress.emit(100, "扫描完成")
-                        self.finished.emit(True, str([]))
-                        return
-                        
-                    venvs = []
-                    venvs_lock = Lock()
-                    scanned_count = Value('i', 0)
-                    
-                    def scan_dir(root_dir):
-                        if self.is_cancelled:
-                            return
-                        try:
-                            def scan_single_dir(path, depth=0, max_depth=None):
-                                if self.is_cancelled:
-                                    return []
-                                if max_depth is not None and depth > max_depth:
-                                    return []
-                                    
-                                results = []
-                                try:
-                                    if self.venv_manager._is_valid_venv(path):
-                                        rel_path = str(path.relative_to(self.venv_manager.base_path))
-                                        # 获取Python版本
-                                        python_version = ""
-                                        if self.config.get('show_python_version'):
-                                            python_version = self.venv_manager.get_python_version(path)
-                                        self.venv_found.emit(rel_path, python_version)
-                                        results.append(rel_path)
-                                    
-                                    for item in path.iterdir():
-                                        if self.is_cancelled:
-                                            return results
-                                        if item.is_dir():
-                                            results.extend(scan_single_dir(item, depth + 1, max_depth))
-                                except Exception:
-                                    pass
-                                return results
-                            
-                            # 从配置获取扫描深度
-                            max_depth = self.config.get('scan_depth', 100)  # 默认值改为100
-                            dir_results = scan_single_dir(root_dir, 0, max_depth)
-                            
-                            with venvs_lock:
-                                venvs.extend(dir_results)
-                                with scanned_count.get_lock():
-                                    scanned_count.value += 1
-                                    progress = int((scanned_count.value / total_items) * 100)
-                                self.progress.emit(progress, "正在扫描...")
-                                
-                        except Exception as e:
-                            logging.error(f"扫描目录失败: {root_dir}, 错误: {str(e)}")
-                            print(f"Error scanning directory {root_dir}: {e}")
-                    
-                    # 使用配置的线程数
-                    max_threads = self.config.get('max_threads', 32)
-                    
-                    with ThreadPoolExecutor(max_workers=min(max_threads, total_items)) as executor:
-                        if not self.is_cancelled:
-                            executor.map(scan_dir, root_dirs)
-                    
-                    if self.is_cancelled:
-                        self.progress.emit(0, "扫描已取消")
-                        self.finished.emit(False, "扫描已取消")
-                    else:
-                        self.progress.emit(100, "扫描完成")
-                        self.finished.emit(True, str(sorted(venvs)))
-                    
-                except Exception as e:
-                    self.progress.emit(0, f"扫描出错: {str(e)}")
-                    self.finished.emit(False, str(e))
-                finally:
-                    self.is_scanning = False
-            elif self.operation == 'batch_delete':
-                venv_names = self.kwargs['names']
-                total = len(venv_names)
-                
-                for i, name in enumerate(venv_names, 1):
-                    try:
-                        progress = int((i - 1) / total * 100)
-                        self.progress.emit(progress, f"正在删除 {name}...")
-                        self.venv_manager.delete_venv(name)
-                    except Exception as e:
-                        logging.error(f"删除虚拟环境失败: {name}, 错误: {str(e)}")
-                        print(f"Warning: Failed to delete {name}: {str(e)}")
-                
-                self.progress.emit(100, "完成")
-                if total == 1:
-                    self.finished.emit(True, f"虚拟环境 {venv_names[0]} 删除成功")
-                else:
-                    self.finished.emit(True, f"{total} 个虚拟环境删除成功")
-        except FileNotFoundError as e:
-            logging.exception(f"操作失败: {self.operation}, 未找到文件: {str(e)}")
-            self.progress.emit(0, f"错误: 未找到指定的文件，请检查Python路径是否正确")
-            self.finished.emit(False, "未找到指定的文件")
-        except Exception as e:
-            logging.exception(f"操作失败: {self.operation}")
-            self.progress.emit(0, f"错误: {str(e)}")
-            self.finished.emit(False, str(e))
 
 class VenvManagerWindow(QMainWindow):
     def __init__(self):
@@ -276,6 +28,7 @@ class VenvManagerWindow(QMainWindow):
         self.venv_manager = VenvManager()
         self.worker = None
         self.is_scanning = False  # 添加扫描状态标志
+        self.current_search_text = ""  # 添加当前搜索文本变量
         self.cleanup_timer = QTimer()
         self.cleanup_timer.timeout.connect(self.check_worker)
         self.cleanup_timer.start(100)
@@ -345,6 +98,15 @@ class VenvManagerWindow(QMainWindow):
                 item.setText(venv_path)
                 
             self.venv_list.addItem(item)
+            
+            # 如果有搜索条件，应用过滤
+            if hasattr(self, 'current_search_text') and self.current_search_text:
+                # 检查是否匹配搜索条件
+                if (self.current_search_text in venv_path.lower() or 
+                    (python_version and self.current_search_text in python_version.lower())):
+                    item.setHidden(False)
+                else:
+                    item.setHidden(True)
             # 按字母顺序排序
             self.venv_list.sortItems()
 
@@ -369,8 +131,11 @@ class VenvManagerWindow(QMainWindow):
         return text
         
     def init_ui(self):
-        self.setWindowTitle('Python虚拟环境管理器')
+        self.setWindowTitle(f'{APP_NAME} v{APP_VERSION}')
         self.setGeometry(300, 300, 600, 400)
+        
+        # 创建菜单栏
+        self.create_menu_bar()
         
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -388,7 +153,30 @@ class VenvManagerWindow(QMainWindow):
         self.venv_list.setSelectionMode(QListWidget.ExtendedSelection)
         # 设置自定义代理，确保Python版本显示在最右边
         self.venv_list.setItemDelegate(VenvItemDelegate())
-        layout.addWidget(QLabel('已存在的虚拟环境:'))
+        
+        # 启用右键菜单
+        self.venv_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.venv_list.customContextMenuRequested.connect(self.show_context_menu)
+        
+        # 添加搜索框
+        search_layout = QHBoxLayout()
+        search_label = QLabel('搜索:')
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText('按名称或版本过滤')
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.textChanged.connect(self.filter_venv_list)
+        
+        # 添加清除按钮
+        clear_btn = QPushButton('清除')
+        clear_btn.setToolTip('清除搜索条件')
+        clear_btn.clicked.connect(self.clear_search)
+        
+        search_layout.addWidget(search_label)
+        search_layout.addWidget(self.search_input)
+        search_layout.addWidget(clear_btn)
+        
+
+        layout.addLayout(search_layout)
         layout.addWidget(self.venv_list)
         
         # 添加Python选择器
@@ -415,17 +203,6 @@ class VenvManagerWindow(QMainWindow):
         self.progress_widget = ProgressWidget()
         layout.addWidget(self.progress_widget)
         
-        # 操作按钮组
-        self.button_group = ButtonGroup([
-            '激活环境', '复制环境', '删除环境', '刷新列表', '设置'
-        ])
-        self.button_group.buttons['激活环境'].clicked.connect(self.activate_venv)
-        self.button_group.buttons['复制环境'].clicked.connect(self.copy_venv)
-        self.button_group.buttons['删除环境'].clicked.connect(self.delete_venv)
-        self.button_group.buttons['刷新列表'].clicked.connect(self.refresh_venv_list)
-        self.button_group.buttons['设置'].clicked.connect(self.show_settings)
-        layout.addWidget(self.button_group)
-        
         # 列表设置
         self.venv_list.itemDoubleClicked.connect(self.show_venv_info)
         
@@ -448,7 +225,7 @@ class VenvManagerWindow(QMainWindow):
         python_path = self.python_selector.get_selected_python()
         
         # 使用工作线程创建环境
-        self.progress_widget.progress_bar.setValue(0)
+        self.progress_widget.update_progress(0, self.progress_widget.status_label.text())
         worker = self._create_worker(
             'create',
             name=name,
@@ -510,7 +287,7 @@ class VenvManagerWindow(QMainWindow):
         )
         
         if reply == QMessageBox.Yes:
-            self.progress_widget.progress_bar.setValue(0)
+            self.progress_widget.update_progress(0, self.progress_widget.status_label.text())
             worker = self._create_worker('batch_delete', names=venv_names)
             worker.finished.connect(self._handle_delete_result)
             worker.start()
@@ -529,7 +306,7 @@ class VenvManagerWindow(QMainWindow):
             self.progress_widget.status_label.setText("正在取消扫描...")
             return
             
-        self.progress_widget.progress_bar.setValue(0)
+        self.progress_widget.update_progress(0, self.progress_widget.status_label.text())
         worker = self._create_worker('list')
         worker.finished.connect(self._handle_refresh_result)
         worker.start()
@@ -542,6 +319,10 @@ class VenvManagerWindow(QMainWindow):
         # 如果是取消的扫描，自动开始新的扫描
         if msg == "扫描已取消":
             QTimer.singleShot(100, self.refresh_venv_list)
+        elif success:
+            # 如果搜索框有内容，应用过滤
+            if hasattr(self, 'search_input') and self.search_input.text():
+                self.filter_venv_list(self.search_input.text())
 
     def change_base_path(self):
         """更改虚拟环境基础路径"""
@@ -556,6 +337,9 @@ class VenvManagerWindow(QMainWindow):
                 self.path_selector.path_display.setText(new_path)
                 self.config.add_recent_path(new_path)
                 self.refresh_venv_list()
+            except KeyboardInterrupt:
+                logging.warning("用户中断了路径更改操作")
+                QMessageBox.information(self, '提示', '操作已取消')
             except Exception as e:
                 logging.error(f"更改路径失败: {new_path}, 错误: {str(e)}")
                 QMessageBox.critical(self, '错误', f'更改路径失败: {str(e)}')
@@ -587,10 +371,89 @@ class VenvManagerWindow(QMainWindow):
         # 直接从 config 获取设置
         self.max_scan_depth = self.config.get('scan_depth')
         self.max_threads = self.config.get('max_threads')
+        
+        # 更新菜单项的选中状态
+        if hasattr(self, 'auto_refresh_action'):
+            self.auto_refresh_action.setChecked(self.config.get('auto_refresh'))
+        if hasattr(self, 'show_python_version_action'):
+            self.show_python_version_action.setChecked(self.config.get('show_python_version'))
+        if hasattr(self, 'auto_upgrade_pip_action'):
+            self.auto_upgrade_pip_action.setChecked(self.config.get('auto_upgrade_pip'))
+        if hasattr(self, 'show_pkg_size_action'):
+            self.show_pkg_size_action.setChecked(self.config.get('show_pkg_size'))
+            
         # 如果设置改变了，刷新列表
         # 当显示Python版本设置改变时，始终刷新列表
         if self.config.get('auto_refresh') or self.config.get('show_python_version'):
             self.refresh_venv_list() 
+            
+    def create_menu_bar(self):
+        """创建菜单栏"""
+        menubar = self.menuBar()
+        
+        # 文件菜单
+        file_menu = menubar.addMenu('文件')
+        
+        # 设置菜单 - 作为顶层菜单
+        settings_menu = menubar.addMenu('设置')
+        
+        # 常规设置
+        general_settings_action = QAction('设置页面', self)
+        general_settings_action.triggered.connect(self.show_settings)
+        settings_menu.addAction(general_settings_action)
+
+        # 自动刷新设置
+        self.auto_refresh_action = QAction('自动刷新列表', self)
+        self.auto_refresh_action.setCheckable(True)
+        self.auto_refresh_action.setChecked(self.config.get('auto_refresh'))
+        self.auto_refresh_action.triggered.connect(self.toggle_auto_refresh)
+        settings_menu.addAction(self.auto_refresh_action)
+        
+        # 显示Python版本设置
+        self.show_python_version_action = QAction('显示Python版本', self)
+        self.show_python_version_action.setCheckable(True)
+        self.show_python_version_action.setChecked(self.config.get('show_python_version'))
+        self.show_python_version_action.triggered.connect(self.toggle_show_python_version)
+        settings_menu.addAction(self.show_python_version_action)
+        
+        # 自动升级pip设置
+        self.auto_upgrade_pip_action = QAction('自动升级pip', self)
+        self.auto_upgrade_pip_action.setCheckable(True)
+        self.auto_upgrade_pip_action.setChecked(self.config.get('auto_upgrade_pip'))
+        self.auto_upgrade_pip_action.triggered.connect(self.toggle_auto_upgrade_pip)
+        settings_menu.addAction(self.auto_upgrade_pip_action)
+        
+        # 显示包大小设置
+        self.show_pkg_size_action = QAction('显示包大小', self)
+        self.show_pkg_size_action.setCheckable(True)
+        self.show_pkg_size_action.setChecked(self.config.get('show_pkg_size'))
+        self.show_pkg_size_action.triggered.connect(self.toggle_show_pkg_size)
+        settings_menu.addAction(self.show_pkg_size_action)
+        
+        # 添加分隔线
+        settings_menu.addSeparator()
+        
+        # 重置设置
+        reset_settings_action = QAction('重置所有设置', self)
+        reset_settings_action.triggered.connect(self.reset_all_settings)
+        settings_menu.addAction(reset_settings_action)
+        
+        # 添加分隔线
+        file_menu.addSeparator()
+        
+        # 退出动作
+        exit_action = QAction('退出', self)
+        exit_action.setShortcut('Ctrl+Q')
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        
+        # 帮助菜单
+        help_menu = menubar.addMenu('帮助')
+        
+        # 关于动作
+        about_action = QAction('关于', self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
 
     def copy_venv(self):
         """复制虚拟环境"""
@@ -617,7 +480,7 @@ class VenvManagerWindow(QMainWindow):
                 parent_dir = self.venv_manager.base_path / target_path.parent
                 parent_dir.mkdir(parents=True, exist_ok=True)
             
-            self.progress_widget.progress_bar.setValue(0)
+            self.progress_widget.update_progress(0, self.progress_widget.status_label.text())
             worker = self._create_worker('copy', source=source_name, target=target_name)
             worker.finished.connect(self._handle_copy_result)
             worker.start()
@@ -629,3 +492,144 @@ class VenvManagerWindow(QMainWindow):
             QMessageBox.information(self, '成功', msg)
         else:
             QMessageBox.critical(self, '错误', f'复制虚拟环境失败: {msg}') 
+            
+    def toggle_auto_refresh(self):
+        """切换自动刷新设置"""
+        value = self.auto_refresh_action.isChecked()
+        self.config.set('auto_refresh', value)
+        
+    def toggle_show_python_version(self):
+        """切换显示Python版本设置"""
+        value = self.show_python_version_action.isChecked()
+        self.config.set('show_python_version', value)
+        # 刷新列表以应用新设置
+        self.refresh_venv_list()
+        
+    def toggle_auto_upgrade_pip(self):
+        """切换自动升级pip设置"""
+        value = self.auto_upgrade_pip_action.isChecked()
+        self.config.set('auto_upgrade_pip', value)
+        
+    def toggle_show_pkg_size(self):
+        """切换显示包大小设置"""
+        value = self.show_pkg_size_action.isChecked()
+        self.config.set('show_pkg_size', value)
+    
+    def filter_venv_list(self, text):
+        """根据搜索文本过滤虚拟环境列表"""
+        # 保存当前搜索文本，以便在扫描过程中添加新项目时使用
+        self.current_search_text = text.lower()
+        
+        # 如果搜索文本为空，显示所有项
+        if not self.current_search_text:
+            for i in range(self.venv_list.count()):
+                self.venv_list.item(i).setHidden(False)
+            return
+            
+        # 遍历所有项，根据名称和版本过滤
+        for i in range(self.venv_list.count()):
+            item = self.venv_list.item(i)
+            venv_path = item.text().lower()
+            python_version = item.data(Qt.UserRole + 1)
+            
+            # 检查路径或版本是否包含搜索文本
+            if self.current_search_text in venv_path or (python_version and self.current_search_text in python_version.lower()):
+                item.setHidden(False)
+            else:
+                item.setHidden(True)
+                
+    def clear_search(self):
+        """清除搜索框并显示所有项"""
+        self.search_input.clear()
+        self.current_search_text = ""
+        # 显示所有项
+        for i in range(self.venv_list.count()):
+            self.venv_list.item(i).setHidden(False)
+        
+    def set_scan_depth(self):
+        """设置扫描深度"""
+        current_depth = self.config.get('scan_depth')
+        depth, ok = QInputDialog.getInt(
+            self, '设置扫描深度', 
+            '请输入扫描子文件夹的最大深度（1-100）：',
+            current_depth, 1, 100
+        )
+        
+        if ok:
+            self.config.set('scan_depth', depth)
+            self.max_scan_depth = depth
+            # 如果启用了自动刷新，则刷新列表
+            if self.config.get('auto_refresh'):
+                self.refresh_venv_list()
+                
+    def set_max_threads(self):
+        """设置最大线程数"""
+        current_threads = self.config.get('max_threads')
+        threads, ok = QInputDialog.getInt(
+            self, '设置最大线程数', 
+            '请输入扫描时使用的最大线程数（1-64）：',
+            current_threads, 1, 64
+        )
+        
+        if ok:
+            self.config.set('max_threads', threads)
+            self.max_threads = threads
+        
+    def reset_all_settings(self):
+        """重置所有设置"""
+        reply = QMessageBox.question(
+            self, '确认重置', '确定要将所有设置重置为默认值吗？',
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            self.config.clear()
+            self.config.load_defaults()
+            # 更新菜单项的选中状态
+            self.auto_refresh_action.setChecked(self.config.get('auto_refresh'))
+            self.show_python_version_action.setChecked(self.config.get('show_python_version'))
+            self.auto_upgrade_pip_action.setChecked(self.config.get('auto_upgrade_pip'))
+            self.show_pkg_size_action.setChecked(self.config.get('show_pkg_size'))
+            # 应用新设置
+            self.apply_settings()
+            QMessageBox.information(self, '成功', '所有设置已重置为默认值')
+    
+    def show_context_menu(self, position):
+        """显示右键菜单"""
+        menu = QMenu()
+        
+        # 获取当前选中项
+        selected_items = self.venv_list.selectedItems()
+        
+        # 只有在有选中项时才显示激活、复制和删除选项
+        if selected_items:
+            # 添加菜单项
+            activate_action = QAction('激活环境', self)
+            activate_action.triggered.connect(self.activate_venv)
+            menu.addAction(activate_action)
+            
+            copy_action = QAction('复制环境', self)
+            copy_action.triggered.connect(self.copy_venv)
+            menu.addAction(copy_action)
+            
+            delete_action = QAction('删除环境', self)
+            delete_action.triggered.connect(self.delete_venv)
+            menu.addAction(delete_action)
+            
+            # 添加分隔线
+            menu.addSeparator()
+        
+        # 刷新列表选项始终显示
+        refresh_action = QAction('刷新列表', self)
+        refresh_action.triggered.connect(self.refresh_venv_list)
+        menu.addAction(refresh_action)
+        
+        # 显示菜单
+        menu.exec_(self.venv_list.viewport().mapToGlobal(position))
+        
+    def show_about(self):
+        """显示关于对话框"""
+        QMessageBox.about(self, 
+                         f'{APP_NAME}',
+                         f'{APP_NAME} v{APP_VERSION}\n'
+                         f'By {APP_AUTHOR}')
