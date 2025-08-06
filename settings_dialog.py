@@ -60,7 +60,6 @@ class SettingsDialog(QDialog):
         
         # 第二行：显示Python版本
         second_row_layout = QHBoxLayout()
-        second_row_layout.setAlignment(Qt.AlignLeft)  # 强制左对齐
         
         # 显示Python版本
         self.show_python_version = QCheckBox('显示Python版本')
