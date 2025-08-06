@@ -15,7 +15,7 @@ import os
 
 # 应用版本信息
 APP_NAME = "Python虚拟环境管理器"
-APP_VERSION = "1.0"
+APP_VERSION = "1.5.0"
 APP_AUTHOR = "MAO-NIANG"
 
 
